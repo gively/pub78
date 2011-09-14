@@ -14,4 +14,6 @@ Gem::Specification.new do |gem|
   gem.name          = "pub78"
   gem.require_paths = ["lib"]
   gem.version       = Pub78::VERSION
+
+  gem.add_dependency 'rubyzip'
 end

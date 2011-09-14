@@ -1,3 +1,5 @@
+require 'zip/zip'
+
 module Pub78
   class Adapter
     IRS_URL = "http://www.irs.gov/pub/irs-soi/pub78ein.exe"
