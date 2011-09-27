@@ -1,12 +1,24 @@
 require 'zip/zip'
+require 'net/http'
+require 'uri'
+require 'time'
 
 module Pub78
   class Adapter
-    IRS_URL = "http://www.irs.gov/pub/irs-soi/pub78ein.exe"
+    IRS_URL = URI.parse("http://www.irs.gov/pub/irs-soi/pub78ein.exe")
   
     def initialize(stream, updated_date)
       @stream = stream
       @updated_date = updated_date
+    end
+    
+    class << self
+      attr_accessor :logger
+      
+      def debug(msg)
+        return unless logger
+        logger.debug msg
+      end
     end
     
     def self.with_file(filename, &block)
@@ -33,7 +45,8 @@ module Pub78
     def self.with_exe(filename, &block)
       File.open(filename, 'rb', :encoding => "ascii-8bit") do |io|
         last4bytes = []
-        Rails.logger.debug("Scanning #{filename} for ZIP header")
+        debug "Scanning #{filename} for ZIP header"
+        
         while true
           last4bytes << io.read(1)
           last4bytes.shift while last4bytes.size > 4
@@ -42,7 +55,7 @@ module Pub78
               last4bytes[2] == "\x03" && last4bytes[3] == "\x04")
               
             Tempfile.open('pub78zip', :encoding => "ascii-8bit") do |tf|
-              Rails.logger.debug("Extracting ZIP file to #{tf.path}")
+              debug("Extracting ZIP file to #{tf.path}")
               tf.write(last4bytes.join(""))
               io.seek(-4, IO::SEEK_CUR)
               IO.copy_stream(io, tf)
@@ -57,19 +70,24 @@ module Pub78
     end
     
     def self.irs_update_time
-      Time.httpdate(HTTPClient.new.head(IRS_URL).header['Last-Modified'][0])
+      Net::HTTP.start(IRS_URL.host, IRS_URL.port) do |http|
+        resp = http.head(IRS_URL.path)
+        Time.httpdate(resp['Last-Modified'])
+      end
     end
     
     def self.with_irs_data(min_date=nil, &block)
       if min_date
-        Rails.logger.debug("Checking last update of IRS data")
+        debug "Checking last update of IRS data"
         return unless irs_update_time > min_date
       end
       
       Tempfile.open('irs_pub78_data', :encoding => "ascii-8bit") do |tf|
-        Rails.logger.debug("Downloading IRS data to #{tf.path}")
-        HTTPClient.new.get_content(IRS_URL) do |chunk|
-          tf.write(chunk)
+        debug "Downloading IRS data to #{tf.path}"
+        Net::HTTP.start(IRS_URL.host, IRS_URL.port) do |http|
+          http.get(IRS_URL.path) do |chunk|
+            tf.write(chunk)
+          end
         end
         
         with_exe(tf.path, &block)
